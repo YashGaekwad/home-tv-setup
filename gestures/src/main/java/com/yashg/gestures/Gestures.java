@@ -16,9 +16,9 @@ final class Gestures {
         NONE("—", ""),
         LEFT("⬅", "Left"), RIGHT("➡", "Right"), UP("⬆", "Up"), DOWN("⬇", "Down"),
         OK("🤏", "OK / open"),
-        SWIPE_LEFT("⇦", "Swipe left"), SWIPE_RIGHT("⇨", "Swipe right"),
+        SWIPE_LEFT("⇦", "Scroll left"), SWIPE_RIGHT("⇨", "Scroll right"),
         SWIPE_UP("⇧", "Swipe up"), SWIPE_DOWN("⇩", "Swipe down"),
-        PLAY_PAUSE("✋", "Play / pause"),
+        PLAY_PAUSE("✊", "Play / pause"),
         VOL_UP("👍", "Volume up"), VOL_DOWN("👎", "Volume down"),
         MUTE("✊", "Mute"),
         BACK("✌", "Back"),
@@ -54,8 +54,8 @@ final class Gestures {
         boolean index = extended(p, 8, 6), middle = extended(p, 12, 10), ring = extended(p, 16, 14),
                 pinky = extended(p, 20, 18);
 
-        // Pinch: thumb tip on index tip.
-        if (dist(p.get(4), p.get(8)) < 0.30 * hand && (middle || ring || pinky)) return G.OK;
+        // Pinch (OK sign): thumb tip on index tip, the other three fingers out.
+        if (dist(p.get(4), p.get(8)) < 0.20 * hand && middle && ring && pinky) return G.OK;
 
         // Pointing: only the index finger out; its direction picks the arrow.
         if (index && !middle && !ring && !pinky) {
@@ -70,9 +70,9 @@ final class Gestures {
         if (top.score() < 0.6f) return G.NONE;
         switch (top.categoryName()) {
             case "Open_Palm": return G.NONE;   // movement decides: swipe, or held still = play/pause
-            case "Closed_Fist": return G.MUTE;
-            case "Thumb_Up": return G.VOL_UP;
-            case "Thumb_Down": return G.VOL_DOWN;
+            case "Closed_Fist": return G.PLAY_PAUSE;
+            case "Thumb_Up": return G.UP;       // thumbs read well from the sofa; a pointing-down finger did not
+            case "Thumb_Down": return G.DOWN;
             case "Victory": return G.BACK;
             case "ILoveYou": return G.HOME;
             case "Pointing_Up": return G.UP;

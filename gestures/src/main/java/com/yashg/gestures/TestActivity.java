@@ -48,11 +48,33 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Nothing is sent or saved; frames live only in memory for the moment they are processed.
  */
 public class TestActivity extends Activity {
-    private static final int W = 640, H = 480;
+    /** Camera frame; the recogniser sees either all of it at half size, or a full-resolution window around the hand. */
+    private static final int CAM_W = 1280, CAM_H = 720, CROP_W = 640, CROP_H = 480;
+    private boolean tracking;
+    private int cropX, cropY, searchIdx;
+    private static final int[] SEARCH_X = {(1280 - 640) / 2, 0, 1280 - 640};
+    private long lastHandTime;
 
     private ImageView preview;
     private Overlay overlay;
-    private TextView big, label, stats, raw;
+    private TextView big, label, stats, raw, prompt;
+    /** Guided test: what the user is asked to do now; every frame's log line carries it. */
+    private volatile String step = "free";
+    private final android.os.Handler ui = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final String[][] SCRIPT = {
+            // step id, on-screen text, seconds
+            {"ready", "Guided test starts in 5 s. Sit where you normally watch.", "5"},
+            {"right", "Tilt palm to YOUR RIGHT and HOLD 3 s, then upright. Twice.", "12"},
+            {"pause1", "Hand down. Rest.", "3"},
+            {"left", "Tilt palm to YOUR LEFT and HOLD 3 s, then upright. Twice.", "12"},
+            {"pause2", "Hand down. Rest.", "3"},
+            {"up", "THUMBS UP (or point up) and hold", "9"},
+            {"pause3", "Hand down. Rest.", "3"},
+            {"down", "THUMBS DOWN and hold", "9"},
+            {"pause4", "Hand down. Rest.", "3"},
+            {"hold", "Raise a FIST next to your face, hold 2 s", "6"},
+            {"rest", "Hand down, just watch TV", "6"},
+            {"done", "Done! Thank you. Tell Claude \"done\".", "0"}};
     private HandlerThread camThread;
     private Handler camHandler;
     private CameraDevice camera;
@@ -91,6 +113,9 @@ public class TestActivity extends Activity {
         side.setOrientation(LinearLayout.VERTICAL);
         side.setPadding(dp(48), 0, 0, 0);
         side.addView(text("GESTURE TEST", 14, 0x99FFFFFF, Typeface.DEFAULT_BOLD));
+        prompt = text("", 26, 0xFFF5B700, Typeface.DEFAULT_BOLD);
+        prompt.setPadding(0, dp(10), 0, dp(4));
+        side.addView(prompt);
         big = text("—", 120, Color.WHITE, Typeface.DEFAULT);
         side.addView(big);
         label = text("Show a hand to the camera", 30, Color.WHITE, Typeface.create("sans-serif-light", Typeface.NORMAL));
@@ -102,13 +127,48 @@ public class TestActivity extends Activity {
         raw.setPadding(0, dp(8), 0, 0);
         side.addView(raw);
         TextView help = text("☝ point left / right / up / down = arrows\n🤏 pinch = OK / open\n✋ palm = play / pause"
-                + "\n👍 👎 = volume\n✊ fist = mute\n✌ victory = back\n🤟 = home", 17, 0xB3FFFFFF, Typeface.DEFAULT);
+                + "\n✌ victory = back\n🤟 = home", 17, 0xB3FFFFFF, Typeface.DEFAULT);
         help.setPadding(0, dp(28), 0, 0);
         help.setLineSpacing(0, 1.3f);
         side.addView(help);
         row.addView(side);
         root.addView(row);
         setContentView(root);
+    }
+
+    private java.io.PrintWriter diagOut;
+
+    /** Diagnostic line: to logcat and to files/diag.txt (adb pull /sdcard/Android/data/com.yashg.gestures/files/diag.txt). */
+    private synchronized void diag(String line) {
+        android.util.Log.d("GestDiag", line);
+        try {
+            if (diagOut == null) {
+                java.io.File f = new java.io.File(getExternalFilesDir(null), "diag.txt");
+                diagOut = new java.io.PrintWriter(new java.io.FileWriter(f, true), true);
+            }
+            diagOut.println(SystemClock.elapsedRealtime() + " " + line);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void runScript(int i) {
+        if (i >= SCRIPT.length) return;
+        step = SCRIPT[i][0];
+        prompt.setText(SCRIPT[i][1]);
+        diag("STEP " + step);
+        int secs = Integer.parseInt(SCRIPT[i][2]);
+        if (secs > 0) ui.postDelayed(() -> runScript(i + 1), secs * 1000L);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
+            ui.removeCallbacksAndMessages(null);
+            diag("RUN START");
+            runScript(0);
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 
     @Override
@@ -167,7 +227,7 @@ public class TestActivity extends Activity {
         if (ranges != null) for (Range<Integer> r : ranges) if (best == null || r.getUpper() > best.getUpper()) best = r;
         final Range<Integer> fpsRange = best;
 
-        reader = ImageReader.newInstance(W, H, ImageFormat.YUV_420_888, 2);
+        reader = ImageReader.newInstance(CAM_W, CAM_H, ImageFormat.YUV_420_888, 2);
         reader.setOnImageAvailableListener(this::onImage, camHandler);
         //noinspection MissingPermission
         cm.openCamera(id, new CameraDevice.StateCallback() {
@@ -221,18 +281,40 @@ public class TestActivity extends Activity {
             return;
         }
         try {
-            Bitmap bmp = toBitmap(img);
+            // Search the whole picture at half size; once a hand is found, a full-resolution window follows it,
+            // so a hand far away on the sofa is twice as many pixels for the recogniser.
+            // Searching: full-resolution windows over the centre, left and right of the room in turn (a hand on the
+            // sofa is too small for the hand finder in the whole picture shrunk down).
+            if (!tracking) {
+                cropX = SEARCH_X[searchIdx++ % SEARCH_X.length];
+                cropY = (CAM_H - CROP_H) / 2;
+            }
+            final int x0 = cropX, y0 = cropY, stride = 1, outW = CROP_W, outH = CROP_H;
+            Bitmap bmp = toBitmap(img, x0, y0, outW, outH, stride);
             img.close();
             long t0 = SystemClock.elapsedRealtime();
             GestureRecognizerResult res = recognizer.recognizeForVideo(new BitmapImageBuilder(bmp).build(), t0);
             long dt = SystemClock.elapsedRealtime() - t0;
             Gestures.G g = Gestures.classify(res);
-            Gestures.G motion = swipes.update(t0, res.landmarks().isEmpty() ? null : res.landmarks().get(0),
-                    Gestures.isPalm(res));
+            boolean palm = Gestures.isPalm(res);
+            reframe(res, x0, y0, outW, outH, stride, t0);
+            Gestures.G motion = swipes.update(t0, res.landmarks().isEmpty() ? null : res.landmarks().get(0), palm);
+            if (res.landmarks().isEmpty()) {
+                diag("t=" + t0 + " step=" + step + " hand=no");
+            } else {
+                NormalizedLandmark c = res.landmarks().get(0).get(9);
+                String cat = res.gestures().isEmpty() || res.gestures().get(0).isEmpty() ? "-"
+                        : res.gestures().get(0).get(0).categoryName() + ":" + Math.round(res.gestures().get(0).get(0).score() * 100);
+                diag(String.format(Locale.US,
+                        "t=%d step=%s hand=yes palm=%b x=%.3f y=%.3f size=%.3f tilt=%+.0f,%+.0f move=%+.2f,%+.2f cat=%s motion=%s g=" + g + " zoom=" + tracking,
+                        t0, step, palm, c.x(), c.y(), swipes.lastHand, swipes.lastFlickX, swipes.lastFlickY,
+                        swipes.lastMoveX, swipes.lastMoveY, cat, motion));
+            }
             String top = res.gestures().isEmpty() || res.gestures().get(0).isEmpty() ? "no hand"
                     : res.gestures().get(0).get(0).categoryName() + " " + Math.round(res.gestures().get(0).get(0).score() * 100) + "%";
             List<NormalizedLandmark> lm = res.landmarks().isEmpty() ? null : res.landmarks().get(0);
-            runOnUiThread(() -> show(bmp, lm, g, motion, dt, top));
+            final String mode = tracking ? "following hand" : "searching";
+            runOnUiThread(() -> show(bmp, lm, g, motion, dt, top + "  ·  " + mode));
         } catch (Exception e) {
             try {
                 img.close();
@@ -245,7 +327,7 @@ public class TestActivity extends Activity {
 
     private void show(Bitmap bmp, List<NormalizedLandmark> lm, Gestures.G g, Gestures.G motion, long dt, String top) {
         preview.setImageBitmap(bmp);
-        overlay.set(lm);
+        overlay.set(lm, bmp.getWidth(), bmp.getHeight());
         frames++;
         long now = SystemClock.elapsedRealtime();
         inferMs = inferMs == 0 ? dt : inferMs * 0.8 + dt * 0.2;
@@ -271,12 +353,40 @@ public class TestActivity extends Activity {
         raw.setText("MediaPipe: " + top + "   ·   this frame: " + g.label);
     }
 
+
+    /**
+     * Keep following the hand: a hand near the window's edge re-centres it; no hand for 1.5 s goes back to searching.
+     * Each re-framing moves every position, so the swipe tracker starts over.
+     */
+    private void reframe(GestureRecognizerResult res, int x0, int y0, int outW, int outH, int step, long now) {
+        if (res.landmarks().isEmpty()) {
+            if (tracking && now - lastHandTime > 1500) {
+                tracking = false;
+                swipes.reset();
+            }
+            return;
+        }
+        lastHandTime = now;
+        NormalizedLandmark c = res.landmarks().get(0).get(9);
+        int hx = x0 + Math.round(c.x() * outW * step), hy = y0 + Math.round(c.y() * outH * step);
+        boolean found = !tracking;
+        boolean nearEdge = found
+                || hx < cropX + CROP_W * 0.25 || hx > cropX + CROP_W * 0.75
+                || hy < cropY + CROP_H * 0.2 || hy > cropY + CROP_H * 0.8;
+        if (nearEdge) {
+            cropX = Math.max(0, Math.min(CAM_W - CROP_W, hx - CROP_W / 2));
+            cropY = Math.max(0, Math.min(CAM_H - CROP_H, hy - CROP_H / 2));
+            tracking = true;
+            swipes.reset();
+        }
+    }
+
     private byte[] yArr, uArr, vArr;
 
-    /** YUV_420_888 to ARGB: the planes are copied out in one go, then converted from plain arrays. */
-    private Bitmap toBitmap(Image img) {
-        int w = img.getWidth(), h = img.getHeight();
-        if (argb == null || argb.length != w * h) argb = new int[w * h];
+    /** A region of the YUV_420_888 frame to ARGB, taking every step-th pixel. */
+    private Bitmap toBitmap(Image img, int x0, int y0, int outW, int outH, int step) {
+        int n = outW * outH;
+        if (argb == null || argb.length != n) argb = new int[n];
         Image.Plane[] pl = img.getPlanes();
         yArr = copy(pl[0].getBuffer(), yArr);
         uArr = copy(pl[1].getBuffer(), uArr);
@@ -284,24 +394,23 @@ public class TestActivity extends Activity {
         final byte[] ya = yArr, ua = uArr, va = vArr;
         final int[] out = argb;
         int yRow = pl[0].getRowStride(), uvRow = pl[1].getRowStride(), uvPix = pl[1].getPixelStride();
-        for (int y = 0; y < h; y++) {
-            int yo = y * yRow, uvo = (y >> 1) * uvRow, o = y * w;
-            for (int x = 0; x < w; x += 2) {
-                int i = uvo + (x >> 1) * uvPix;
+        for (int oy = 0; oy < outH; oy++) {
+            int sy = y0 + oy * step;
+            int yo = sy * yRow, uvo = (sy >> 1) * uvRow, o = oy * outW;
+            for (int ox = 0; ox < outW; ox++) {
+                int sx = x0 + ox * step;
+                int i = uvo + (sx >> 1) * uvPix;
                 int U = (ua[i] & 0xFF) - 128, V = (va[i] & 0xFF) - 128;
-                int rv = 1634 * V, gv = -833 * V - 400 * U, bu = 2066 * U;
-                for (int k = 0; k < 2 && x + k < w; k++) {
-                    int Y = (ya[yo + x + k] & 0xFF) - 16;
-                    int c = 1192 * (Y < 0 ? 0 : Y);
-                    int rr = (c + rv) >> 10, gg = (c + gv) >> 10, bb = (c + bu) >> 10;
-                    rr = rr < 0 ? 0 : (rr > 255 ? 255 : rr);
-                    gg = gg < 0 ? 0 : (gg > 255 ? 255 : gg);
-                    bb = bb < 0 ? 0 : (bb > 255 ? 255 : bb);
-                    out[o + x + k] = 0xFF000000 | (rr << 16) | (gg << 8) | bb;
-                }
+                int Y = (ya[yo + sx] & 0xFF) - 16;
+                int cc = 1192 * (Y < 0 ? 0 : Y);
+                int rr = (cc + 1634 * V) >> 10, gg = (cc - 833 * V - 400 * U) >> 10, bb = (cc + 2066 * U) >> 10;
+                rr = rr < 0 ? 0 : (rr > 255 ? 255 : rr);
+                gg = gg < 0 ? 0 : (gg > 255 ? 255 : gg);
+                bb = bb < 0 ? 0 : (bb > 255 ? 255 : bb);
+                out[o + ox] = 0xFF000000 | (rr << 16) | (gg << 8) | bb;
             }
         }
-        return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888);
+        return Bitmap.createBitmap(out, outW, outH, Bitmap.Config.ARGB_8888);
     }
 
     private static byte[] copy(ByteBuffer src, byte[] dst) {
@@ -360,8 +469,12 @@ public class TestActivity extends Activity {
             line.setStrokeWidth(4);
         }
 
-        void set(List<NormalizedLandmark> lm) {
+        private int bw = 640, bh = 480;
+
+        void set(List<NormalizedLandmark> lm, int bw, int bh) {
             this.lm = lm;
+            this.bw = bw;
+            this.bh = bh;
             invalidate();
         }
 
@@ -369,8 +482,8 @@ public class TestActivity extends Activity {
         protected void onDraw(Canvas canvas) {
             if (lm == null) return;
             // The preview keeps 4:3 inside this view; match its letterbox and its mirror.
-            float vw = getWidth(), vh = getHeight(), scale = Math.min(vw / W, vh / H);
-            float ox = (vw - W * scale) / 2, oy = (vh - H * scale) / 2;
+            float vw = getWidth(), vh = getHeight(), scale = Math.min(vw / bw, vh / bh);
+            float ox = (vw - bw * scale) / 2, oy = (vh - bh * scale) / 2;
             for (int[] b : BONES) {
                 canvas.drawLine(x(lm.get(b[0]), ox, scale), y(lm.get(b[0]), oy, scale),
                         x(lm.get(b[1]), ox, scale), y(lm.get(b[1]), oy, scale), line);
@@ -379,11 +492,11 @@ public class TestActivity extends Activity {
         }
 
         private float x(NormalizedLandmark p, float ox, float s) {
-            return ox + (1 - p.x()) * W * s;
+            return ox + (1 - p.x()) * bw * s;
         }
 
         private float y(NormalizedLandmark p, float oy, float s) {
-            return oy + p.y() * H * s;
+            return oy + p.y() * bh * s;
         }
     }
 }

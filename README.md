@@ -93,13 +93,18 @@ recognised gesture. Frames stay in memory only; the app has no internet permissi
 
 | Gesture | Meaning |
 |---|---|
-| Point left / right / up / down (index finger only) | Arrows |
-| Pinch (thumb + index) | OK / open |
-| Move open palm left / right / up / down | Scroll (one arrow press per swipe) |
-| Open palm held still (about 1 s) | Play / pause |
-| Thumb up / down | Volume up / down |
-| Fist | Mute |
+| Open palm tilted to your right / left, held | Scroll right / left (repeats while held) |
+| Upright open palm | Rest (does nothing) |
+| Thumbs up (or point up) / thumbs down, held | Up / down |
+| Fist next to your face | Play / pause |
+| Pinch (OK sign) | OK / open |
 | Victory | Back |
 | "I love you" sign | Home |
+
+Tuned with a guided test from the sofa (press OK in the app; it logs to
+`/sdcard/Android/data/com.yashg.gestures/files/diag.txt`). The webcam follows the hand with a full-resolution window
+so a hand ~3 m away is big enough for the model. Flicks were dropped: at ~5 frames a second a wrist snap is one or two
+frames and its direction can't be told from the pull before it; the held tilt reads cleanly. Last run: right 9/9,
+left 7/7, up 29 frames, down 37 frames, no scrolls with the hand resting.
 
 Build: `./gradlew :gestures:assembleRelease`, install, then `adb shell pm grant com.yashg.gestures android.permission.CAMERA`.
