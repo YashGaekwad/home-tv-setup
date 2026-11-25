@@ -65,6 +65,10 @@ public class TestActivity extends Activity {
     private double fps, inferMs;
     private Gestures.G last = Gestures.G.NONE, stable = Gestures.G.NONE;
     private int streak;
+    private final Swipes swipes = new Swipes();
+    private Gestures.G event = Gestures.G.NONE;   // the last swipe / play-pause, shown for a moment
+    private long eventUntil;
+    private int eventCount;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -223,10 +227,12 @@ public class TestActivity extends Activity {
             GestureRecognizerResult res = recognizer.recognizeForVideo(new BitmapImageBuilder(bmp).build(), t0);
             long dt = SystemClock.elapsedRealtime() - t0;
             Gestures.G g = Gestures.classify(res);
+            Gestures.G motion = swipes.update(t0, res.landmarks().isEmpty() ? null : res.landmarks().get(0),
+                    Gestures.isPalm(res));
             String top = res.gestures().isEmpty() || res.gestures().get(0).isEmpty() ? "no hand"
                     : res.gestures().get(0).get(0).categoryName() + " " + Math.round(res.gestures().get(0).get(0).score() * 100) + "%";
             List<NormalizedLandmark> lm = res.landmarks().isEmpty() ? null : res.landmarks().get(0);
-            runOnUiThread(() -> show(bmp, lm, g, dt, top));
+            runOnUiThread(() -> show(bmp, lm, g, motion, dt, top));
         } catch (Exception e) {
             try {
                 img.close();
@@ -237,7 +243,7 @@ public class TestActivity extends Activity {
         }
     }
 
-    private void show(Bitmap bmp, List<NormalizedLandmark> lm, Gestures.G g, long dt, String top) {
+    private void show(Bitmap bmp, List<NormalizedLandmark> lm, Gestures.G g, Gestures.G motion, long dt, String top) {
         preview.setImageBitmap(bmp);
         overlay.set(lm);
         frames++;
@@ -252,8 +258,15 @@ public class TestActivity extends Activity {
         streak = g == last ? streak + 1 : 1;
         last = g;
         if (streak >= 3) stable = g;
-        big.setText(stable.icon);
-        label.setText(stable == Gestures.G.NONE ? "Show a hand to the camera" : stable.label);
+        if (motion != Gestures.G.NONE) {
+            event = motion;
+            eventUntil = now + 1200;
+            eventCount++;
+        }
+        Gestures.G shown = now < eventUntil ? event : stable;
+        big.setText(shown.icon);
+        label.setText(shown == Gestures.G.NONE ? "Show a hand to the camera"
+                : shown.label + (now < eventUntil ? "  (#" + eventCount + ")" : ""));
         stats.setText(String.format(Locale.US, "%.1f frames/s  ·  %.0f ms per frame", fps, inferMs));
         raw.setText("MediaPipe: " + top + "   ·   this frame: " + g.label);
     }

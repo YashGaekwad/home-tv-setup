@@ -95,7 +95,8 @@ recognised gesture. Frames stay in memory only; the app has no internet permissi
 |---|---|
 | Point left / right / up / down (index finger only) | Arrows |
 | Pinch (thumb + index) | OK / open |
-| Open palm | Play / pause |
+| Move open palm left / right / up / down | Scroll (one arrow press per swipe) |
+| Open palm held still (about 1 s) | Play / pause |
 | Thumb up / down | Volume up / down |
 | Fist | Mute |
 | Victory | Back |

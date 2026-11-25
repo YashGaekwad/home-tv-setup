@@ -16,6 +16,8 @@ final class Gestures {
         NONE("—", ""),
         LEFT("⬅", "Left"), RIGHT("➡", "Right"), UP("⬆", "Up"), DOWN("⬇", "Down"),
         OK("🤏", "OK / open"),
+        SWIPE_LEFT("⇦", "Swipe left"), SWIPE_RIGHT("⇨", "Swipe right"),
+        SWIPE_UP("⇧", "Swipe up"), SWIPE_DOWN("⇩", "Swipe down"),
         PLAY_PAUSE("✋", "Play / pause"),
         VOL_UP("👍", "Volume up"), VOL_DOWN("👎", "Volume down"),
         MUTE("✊", "Mute"),
@@ -31,6 +33,17 @@ final class Gestures {
     }
 
     private Gestures() {}
+
+    /** An open hand: MediaPipe's Open_Palm, or all four fingers out. */
+    static boolean isPalm(GestureRecognizerResult r) {
+        if (r == null || r.landmarks().isEmpty()) return false;
+        if (!r.gestures().isEmpty() && !r.gestures().get(0).isEmpty()) {
+            Category top = r.gestures().get(0).get(0);
+            if ("Open_Palm".equals(top.categoryName()) && top.score() >= 0.5f) return true;
+        }
+        List<NormalizedLandmark> p = r.landmarks().get(0);
+        return extended(p, 8, 6) && extended(p, 12, 10) && extended(p, 16, 14) && extended(p, 20, 18);
+    }
 
     static G classify(GestureRecognizerResult r) {
         if (r == null || r.landmarks().isEmpty()) return G.NONE;
@@ -56,7 +69,7 @@ final class Gestures {
         Category top = r.gestures().get(0).get(0);
         if (top.score() < 0.6f) return G.NONE;
         switch (top.categoryName()) {
-            case "Open_Palm": return G.PLAY_PAUSE;
+            case "Open_Palm": return G.NONE;   // movement decides: swipe, or held still = play/pause
             case "Closed_Fist": return G.MUTE;
             case "Thumb_Up": return G.VOL_UP;
             case "Thumb_Down": return G.VOL_DOWN;
