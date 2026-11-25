@@ -83,3 +83,22 @@ from the cleanyourtv repo, MIT licence, © Gathin; `axso2` used a family photo t
   encrypted with an Android Keystore key. The receiver only accepts the ADB shell (`android.permission.DUMP`).
 - Close network ADB on the TVs after any change (USB debugging off, revoke authorisations, reboot,
   `tools/adb-closed.py <tv ip>`): port 5555 is plaintext.
+
+## Gestures (test build)
+
+`gestures/` is a test app for controlling the TV with hand gestures through a USB webcam (the MiTV-AXSO1 exposes
+it as a standard camera). It uses Google's MediaPipe gesture recogniser (`gesture_recognizer.task`, Apache 2.0)
+on the TV's CPU, about 4 recognitions a second on this 32-bit chip, and shows the camera, the hand points and the
+recognised gesture. Frames stay in memory only; the app has no internet permission.
+
+| Gesture | Meaning |
+|---|---|
+| Point left / right / up / down (index finger only) | Arrows |
+| Pinch (thumb + index) | OK / open |
+| Open palm | Play / pause |
+| Thumb up / down | Volume up / down |
+| Fist | Mute |
+| Victory | Back |
+| "I love you" sign | Home |
+
+Build: `./gradlew :gestures:assembleRelease`, install, then `adb shell pm grant com.yashg.gestures android.permission.CAMERA`.

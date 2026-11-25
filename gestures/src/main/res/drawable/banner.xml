@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#141A2A" android:pathData="M0,0h320v180h-320z" />
+    <!-- open hand -->
+    <path android:fillColor="#7AA7FF"
+        android:pathData="M150,150 C126,150 112,134 108,112 L102,84 C100,76 112,72 115,80 L122,100 L122,46 C122,38 134,38 134,46 L134,92 L138,92 L138,36 C138,28 150,28 150,36 L150,92 L154,92 L154,40 C154,32 166,32 166,40 L166,96 L170,96 L170,56 C170,48 182,48 182,56 L182,118 C182,136 168,150 150,150 Z" />
+</vector>

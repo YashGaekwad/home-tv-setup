@@ -1,0 +1,38 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.yashg.gestures'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.yashg.gestures'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '0.1-test'
+        // The TV is 32-bit ARM; leave the other CPUs' copies of MediaPipe out of the APK.
+        ndk { abiFilters 'armeabi-v7a' }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    androidResources {
+        noCompress 'task'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.mediapipe:tasks-vision:1.2.3'
+}
