@@ -1,0 +1,32 @@
+# Xiaomi MiTV-AXSO2 (dangalUHD), Android TV 9, firmware 6432. From examples/xiaomi-mitv-axso2, installed entries only.
+# Owner's choices: keeps voice assistant, Chromecast, Mi Share/Miracast and the video apps; disables YT Music, Hungama, firmware updates.
+com.miui.tv.analytics
+com.xiaomi.statistic
+com.google.android.feedback
+com.google.android.tv.bugreportsender
+com.mitv.tvhome.atv
+com.xm.webcontent
+com.xiaomi.floatingframe
+com.google.android.tvrecommendations
+com.google.android.leanbacklauncher.recommendations
+android.autoinstalls.config.xiaomi.amelie
+android.autoinstalls.config.xioami.dangal
+com.mitv.tvhome.mitvplus
+co.sensara.tv.mitv
+com.xiaomi.mitv.tvmanager
+com.xiaomi.mitv.handbook
+com.xiaomi.mitv.updateservice
+com.xiaomo.tv.milegal
+com.xiaomi.mimusic2
+com.mitv.gallery
+com.google.android.videos
+com.google.android.play.games
+com.google.android.youtube.tvmusic
+com.xiaomitv.sonyliv
+com.android.camera2
+com.android.gallery3d
+com.android.printspooler
+com.google.android.marvin.talkback
+com.android.smspush
+com.android.dreams.basic
+com.hungama.myplay.activity

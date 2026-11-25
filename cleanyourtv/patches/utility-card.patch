@@ -1,0 +1,529 @@
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Config.java b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
+index 55f88b20..ff9dc5d9 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/Config.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
+@@ -114,6 +114,8 @@ final class Config {
+     final boolean openOnStartOnWake;
+     /** The focused dock app's name in large type above the dock (config.xml, dock_title). */
+     final boolean dockTitle;
++    /** The home utilities card above the dock (config.xml, utility_card); see UtilityCard. */
++    boolean utilityCard;
+     /** The dock as its own row: band, no names, parked low (config.xml dock_row). false: one plain grid. */
+     final boolean dockRow;
+     /** Inputs, Wi-Fi and Settings folded into one gear button with a dropdown, like Google TV (config.xml top_menu). */
+@@ -712,7 +714,7 @@ final class Config {
+         Festival festival = json == null ? Festival.NONE : Festival.parse(festivalName(json),
+                 string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
+ 
+-        return new Config(dock, fillDock, hidden, libraryApps, libraryExcludedApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
++        Config built = new Config(dock, fillDock, hidden, libraryApps, libraryExcludedApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
+                 packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
+                 Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv,
+                 openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
+@@ -728,6 +730,9 @@ final class Config {
+                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, inputsCecStateOnly,
+                 Math.max(0, Math.min(600, openOnStartNetworkWait)), openOnStartOnWake, iconOnlyVpn, clockFormat, backOpensClock, glowSnap,
+                 settingsKeyClearTask);
++        boolean utility = res.getBoolean(R.bool.utility_card);
++        built.utilityCard = json == null ? utility : bool(json, "utility_card", utility);
++        return built;
+     }
+ 
+     /**
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+index c6ea9470..b24ed6b3 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+@@ -144,6 +144,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     private AppAdapter adapter;
+     private RecyclerView grid;
+     private FrameLayout root;
++    private UtilityCard utility;
++    private int utilityReturn;
+     private WallpaperPlayer wallpaperPlayer;
+     private GlassView glass;
+     private View ambient;
+@@ -540,6 +542,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         // dock_title false: the name above the dock (and the cinematic lines under it) never shows; the glow
+         // still follows the dock.
+         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
++        if (cfg.utilityCard) utility = new UtilityCard(this, root, density, new UtilityCard.Host() {
++            @Override public void onUtilityFocused() {
++                hideGlass();
++            }
++
++            @Override public void onUtilityDown() {
++                focusTile(utilityReturn);
++            }
++
++            @Override public void onUtilityUp() {
++                firstTopButton().requestFocus();
++            }
++        });
+         greeting = findViewById(R.id.greeting);
+         clockBlock = findViewById(R.id.leftBlock);
+         clockRefresh = new ClockRefresh(clockBlock);
+@@ -1087,6 +1102,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     protected void onResume() {
+         super.onResume();
+         resumed = true;
++        if (utility != null) utility.resume();
+         // A festival that started or ended while Home was in the background: rebuild with or without it.
+         if (festive != festival.active(LocalDate.now())) {
+             recreate();
+@@ -1301,6 +1317,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+ 
+     @Override
+     protected void onPause() {
++        if (utility != null) utility.pause();
+         super.onPause();
+         resumed = false;
+         // No UP reaches a paused Home, so a vendor-key hold it saw go down would still open its app later.
+@@ -1878,6 +1895,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         } else {
+             // Below the dock (or in a plain grid) the glow follows the tile without the big name; letting it
+             // fade out left the grid on plain black.
++            if (utility != null) utility.hide();
+             showGlowOnly(position);
+             // Scroll just enough so the whole glass (not only the tile) is visible.
+             revealRect.set(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
+@@ -1913,6 +1931,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         String label = adapter.labelAt(position);
+         int color = adapter.ambientColorAt(position);
+         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
++        if (utility != null) utility.show(dockTopInRoot, hero.getVisibility() == View.VISIBLE ? hero.getHeight() + 14 * density : 0);
+         boolean changed = !label.contentEquals(heroName.getText());
+         if (cinematic && heroArtAlpha > 0f) showHeroArt(position);
+ 
+@@ -2221,6 +2240,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     }
+ 
+     private void hideHero() {
++        if (utility != null) utility.hide();
+         if (!heroShown) return;
+         stopAmbientAnimation();
+         hero.animate().cancel();
+@@ -2457,7 +2477,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
+         }
+         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
++            if (position < COLUMNS) {
++                // dock row: the utility card first when it shows, else on to the top bar
++                if (utility != null && utility.focus()) {
++                    utilityReturn = position;
++                    return true;
++                }
++                return false;
++            }
+             target = position - COLUMNS;
+         } else {
+             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/UtilityCard.java b/launcher/app/src/main/java/com/gathin/tvhome/UtilityCard.java
+new file mode 100644
+index 00000000..fed6e9b9
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/UtilityCard.java
+@@ -0,0 +1,402 @@
++package com.gathin.tvhome;
++
++import android.content.Context;
++import android.content.pm.PackageManager;
++import android.content.pm.ProviderInfo;
++import android.database.ContentObserver;
++import android.database.Cursor;
++import android.graphics.Color;
++import android.graphics.Typeface;
++import android.graphics.drawable.GradientDrawable;
++import android.net.Uri;
++import android.os.Handler;
++import android.os.Looper;
++import android.text.TextUtils;
++import android.view.Gravity;
++import android.view.View;
++import android.widget.FrameLayout;
++import android.widget.LinearLayout;
++import android.widget.TextView;
++
++import java.text.SimpleDateFormat;
++import java.util.ArrayList;
++import java.util.Date;
++import java.util.List;
++import java.util.Locale;
++
++/**
++ * Home utilities above the dock (utility_card): one glass tile per meter or device, read from any app on the TV
++ * that publishes rows through a content provider carrying meta-data {@code com.gathin.tvhome.UTILITY_ROWS}
++ * (its value is the rows URI). Columns: title, accent (#RRGGBB), primary (the big figure, e.g. "₹744"),
++ * detail (one line), updated (epoch ms). The launcher itself reads nothing from the network.
++ */
++final class UtilityCard {
++    static final String META = "com.gathin.tvhome.UTILITY_ROWS";
++
++    /** Focus hand-off with the launcher: Up from the dock lands here, Down goes back to the dock. */
++    interface Host {
++        void onUtilityFocused();
++        void onUtilityDown();
++        void onUtilityUp();
++    }
++
++    private final Context ctx;
++    private final Host host;
++    private final float density;
++    private final LinearLayout view;
++    private final Handler main = new Handler(Looper.getMainLooper());
++    private final List<Uri> sources = new ArrayList<>();
++    private final Typeface light, regular, medium;
++    private boolean shown, hasRows, observing;
++    private float lastDockTop = Float.NaN, lastHeroHeight;
++
++    private final ContentObserver observer = new ContentObserver(main) {
++        @Override
++        public void onChange(boolean selfChange) {
++            load();
++        }
++    };
++
++    UtilityCard(Context ctx, FrameLayout root, float density, Host host) {
++        this.ctx = ctx;
++        this.host = host;
++        this.density = density;
++        light = UiFont.get(ctx, R.string.font_light);
++        regular = UiFont.get(ctx, R.string.font_regular);
++        medium = UiFont.get(ctx, R.string.font_medium);
++        view = new LinearLayout(ctx);
++        view.setOrientation(LinearLayout.HORIZONTAL);
++        view.setAlpha(0f);
++        view.setFocusable(false);
++        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
++                FrameLayout.LayoutParams.WRAP_CONTENT);
++        lp.leftMargin = dp(68);
++        root.addView(view, lp);
++    }
++
++    /** Finds the providers again and reads their rows; call from onResume. */
++    void resume() {
++        discover();
++        if (!observing) {
++            for (Uri u : sources) {
++                try {
++                    ctx.getContentResolver().registerContentObserver(u, false, observer);
++                } catch (Exception ignored) {
++                }
++            }
++            observing = true;
++        }
++        load();
++    }
++
++    void pause() {
++        if (observing) ctx.getContentResolver().unregisterContentObserver(observer);
++        observing = false;
++    }
++
++    /** Places the card above the dock, or above the dock title when that shows too. */
++    void show(float dockTopInRoot, float heroHeight) {
++        shown = true;
++        lastDockTop = dockTopInRoot;
++        lastHeroHeight = heroHeight;
++        view.setY(dockTopInRoot - dp(26) - view.getHeight() - (heroHeight > 0 ? heroHeight + dp(14) : 0));
++        if (hasRows && view.getAlpha() < 1f) view.animate().alpha(1f).setDuration(260).start();
++    }
++
++    /** Up from the dock: focus the first tile. False when there is nothing to focus. */
++    boolean focus() {
++        if (!shown || !hasRows || view.getChildCount() == 0) return false;
++        return view.getChildAt(0).requestFocus();
++    }
++
++    boolean hasFocus() {
++        return view.hasFocus();
++    }
++
++    void hide() {
++        if (view.hasFocus()) return;   // stays while the remote is on it
++        shown = false;
++        view.animate().cancel();
++        view.animate().alpha(0f).setDuration(160).start();
++    }
++
++    private void discover() {
++        sources.clear();
++        try {
++            List<ProviderInfo> all = ctx.getPackageManager().queryContentProviders(null, 0, PackageManager.GET_META_DATA);
++            if (all == null) return;
++            for (ProviderInfo p : all) {
++                if (p.metaData == null || !p.exported) continue;
++                String uri = p.metaData.getString(META);
++                if (!TextUtils.isEmpty(uri) && uri.startsWith("content://")) sources.add(Uri.parse(uri));
++            }
++        } catch (Exception ignored) {
++        }
++    }
++
++    private void load() {
++        final List<Uri> uris = new ArrayList<>(sources);
++        new Thread(() -> {
++            List<String[]> rows = new ArrayList<>();
++            for (Uri u : uris) {
++                try (Cursor c = ctx.getContentResolver().query(u, null, null, null, null)) {
++                    while (c != null && c.moveToNext() && rows.size() < 4) {
++                        rows.add(new String[] {col(c, "title"), col(c, "accent"), col(c, "primary"),
++                                col(c, "detail"), col(c, "updated"), col(c, "alert"), col(c, "package"),
++                                col(c, "primary_label"), col(c, "stat1"), col(c, "stat1_label"), col(c, "stat2"),
++                                col(c, "stat2_label"), col(c, "stat3"), col(c, "stat3_label"), col(c, "spark"),
++                                col(c, "chip")});
++                    }
++                } catch (Exception ignored) {
++                    // A source that is gone or failing just leaves its tile out.
++                }
++            }
++            main.post(() -> render(rows));
++        }, "utility-card").start();
++    }
++
++    private static String col(Cursor c, String name) {
++        int i = c.getColumnIndex(name);
++        return i < 0 || c.isNull(i) ? "" : c.getString(i);
++    }
++
++    private void render(List<String[]> rows) {
++        view.removeAllViews();
++        hasRows = !rows.isEmpty();
++        for (String[] r : rows) view.addView(tile(r));
++        if (!hasRows) {
++            view.setAlpha(0f);
++            return;
++        }
++        if (shown) {
++            // Re-place once the new size is known (the card grows upwards from the dock), then fade in.
++            view.post(() -> {
++                if (shown && !Float.isNaN(lastDockTop)) show(lastDockTop, lastHeroHeight);
++            });
++        }
++    }
++
++    private View tile(String[] r) {
++        int accent;
++        try {
++            accent = Color.parseColor(r[1]);
++        } catch (Exception e) {
++            accent = 0xFFF5B700;
++        }
++        LinearLayout box = new LinearLayout(ctx);
++        box.setOrientation(LinearLayout.VERTICAL);
++        box.setMinimumWidth(dp(680));
++        GradientDrawable bg = new GradientDrawable();
++        bg.setColor(0x59141822);
++        bg.setCornerRadius(dp(28));
++        bg.setStroke(Math.max(1, dp(1)), 0x24FFFFFF);
++        box.setBackground(bg);
++        box.setPadding(dp(30), dp(22), dp(30), dp(24));
++
++        // Header: accent dot, title, and the reading's time on the right.
++        LinearLayout head = new LinearLayout(ctx);
++        head.setGravity(Gravity.CENTER_VERTICAL);
++        View dot = new View(ctx);
++        GradientDrawable d = new GradientDrawable();
++        d.setShape(GradientDrawable.OVAL);
++        d.setColor(accent);
++        dot.setBackground(d);
++        head.addView(dot, new LinearLayout.LayoutParams(dp(8), dp(8)));
++        TextView title = text(r[0].toUpperCase(Locale.ROOT), 13, 0xB3FFFFFF, medium);
++        title.setLetterSpacing(0.16f);
++        title.setPadding(dp(10), 0, 0, 0);
++        head.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
++        long t = 0;
++        try {
++            t = Long.parseLong(r[4]);
++        } catch (Exception ignored) {
++        }
++        if (t > 0) head.addView(text(new SimpleDateFormat("h:mm a", Locale.US).format(new Date(t)), 13, 0x66FFFFFF, regular));
++        box.addView(head, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
++                LinearLayout.LayoutParams.WRAP_CONTENT));
++
++        boolean structured = !r[8].isEmpty();
++        if (structured) {
++            // The big figure and up to three small ones, each with a short label.
++            LinearLayout body = new LinearLayout(ctx);
++            body.setGravity(Gravity.BOTTOM);
++            body.addView(figure(r[2], r[7], 52, light, 0xFFFFFFFF));
++            for (int i = 8; i <= 12; i += 2) {
++                if (r[i].isEmpty()) continue;
++                View rule = new View(ctx);
++                rule.setBackgroundColor(0x1FFFFFFF);
++                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(Math.max(1, dp(1)), dp(46));
++                rlp.leftMargin = dp(32);
++                rlp.rightMargin = dp(32);
++                rlp.bottomMargin = dp(4);
++                body.addView(rule, rlp);
++                body.addView(figure(r[i], r[i + 1], 26, regular, 0xF2FFFFFF));
++            }
++            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
++                    LinearLayout.LayoutParams.WRAP_CONTENT);
++            blp.topMargin = dp(10);
++            box.addView(body, blp);
++
++            // Footer: a small bar chart of recent days and the status pill.
++            LinearLayout foot = new LinearLayout(ctx);
++            foot.setGravity(Gravity.CENTER_VERTICAL);
++            double[] spark = parseSpark(r[14]);
++            if (spark.length > 1) {
++                Spark sv = new Spark(ctx, spark, accent, density);
++                foot.addView(sv, new LinearLayout.LayoutParams(dp(16 * Math.min(spark.length, 14)), dp(38)));
++            }
++            if (!r[15].isEmpty()) {
++                TextView chip = text(r[15], 14, accent, medium);
++                GradientDrawable cb = new GradientDrawable();
++                cb.setColor((accent & 0x00FFFFFF) | 0x2E000000);
++                cb.setCornerRadius(dp(14));
++                chip.setBackground(cb);
++                chip.setPadding(dp(14), dp(5), dp(14), dp(6));
++                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
++                        LinearLayout.LayoutParams.WRAP_CONTENT);
++                if (foot.getChildCount() > 0) clp.leftMargin = dp(22);
++                foot.addView(chip, clp);
++            }
++            if (foot.getChildCount() > 0) {
++                LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
++                        LinearLayout.LayoutParams.WRAP_CONTENT);
++                flp.topMargin = dp(18);
++                box.addView(foot, flp);
++            }
++        } else {
++            // A source with only the basic columns: big figure, one line, and its alert.
++            box.addView(figure(r[2], r[7], 48, light, 0xFFFFFFFF));
++            if (!r[3].isEmpty()) box.addView(line(r[3], 0xD9FFFFFF, regular));
++            if (!r[5].isEmpty()) box.addView(line(r[5], accent, medium));
++        }
++
++        // Selectable: OK opens the source app, Down goes back to the dock, Up to the top bar.
++        final String pkg = r[6];
++        final int tint = accent;
++        box.setFocusable(true);
++        box.setContentDescription(r[0] + ", " + r[2] + " " + r[7] + ". " + r[8] + " " + r[9] + ". "
++                + r[10] + " " + r[11] + ". " + r[15] + ". " + r[5]);
++        box.setOnFocusChangeListener((v, has) -> {
++            bg.setStroke(dp(has ? 2 : 1), has ? tint : 0x24FFFFFF);
++            bg.setColor(has ? 0x80202536 : 0x59141822);
++            if (has && host != null) host.onUtilityFocused();
++        });
++        box.setOnKeyListener((v, keyCode, event) -> {
++            if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
++            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
++                if (host != null) host.onUtilityDown();
++                return true;
++            }
++            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
++                if (host != null) host.onUtilityUp();
++                return true;
++            }
++            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
++                open(pkg);
++                return true;
++            }
++            return false;
++        });
++
++        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
++                LinearLayout.LayoutParams.WRAP_CONTENT);
++        if (view.getChildCount() > 0) lp.leftMargin = dp(16);
++        box.setLayoutParams(lp);
++        return box;
++    }
++
++    /** A value over its label, e.g. "₹744" / "so far in November". */
++    private View figure(String value, String label, int sp, Typeface tf, int color) {
++        LinearLayout col = new LinearLayout(ctx);
++        col.setOrientation(LinearLayout.VERTICAL);
++        TextView v = text(value, sp, color, tf);
++        v.setIncludeFontPadding(false);
++        col.addView(v);
++        if (!label.isEmpty()) {
++            TextView l = text(label, 14, 0x8CFFFFFF, regular);
++            l.setPadding(dp(2), dp(6), 0, 0);
++            col.addView(l);
++        }
++        return col;
++    }
++
++    private TextView line(String s, int color, Typeface tf) {
++        TextView v = text(s, 16, color, tf);
++        v.setSingleLine(true);
++        v.setEllipsize(TextUtils.TruncateAt.END);
++        v.setMaxWidth(dp(820));
++        v.setPadding(0, dp(6), 0, 0);
++        return v;
++    }
++
++    private static double[] parseSpark(String s) {
++        if (TextUtils.isEmpty(s)) return new double[0];
++        String[] parts = s.split(",");
++        double[] out = new double[Math.min(parts.length, 14)];
++        int from = parts.length - out.length;
++        for (int i = 0; i < out.length; i++) {
++            try {
++                out[i] = Math.max(0, Double.parseDouble(parts[from + i].trim()));
++            } catch (Exception e) {
++                out[i] = 0;
++            }
++        }
++        return out;
++    }
++
++    /** Recent days as slim rounded bars, the latest in the accent colour. */
++    private static final class Spark extends View {
++        private final double[] values;
++        private final int accent;
++        private final float density;
++        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
++        private final android.graphics.RectF rect = new android.graphics.RectF();
++
++        Spark(Context c, double[] values, int accent, float density) {
++            super(c);
++            this.values = values;
++            this.accent = accent;
++            this.density = density;
++        }
++
++        @Override
++        protected void onDraw(android.graphics.Canvas canvas) {
++            double max = 0.0001;
++            for (double v : values) max = Math.max(max, v);
++            float w = getWidth(), h = getHeight(), slot = w / values.length, bw = slot * 0.6f, r = Math.min(bw / 2, 3 * density);
++            for (int i = 0; i < values.length; i++) {
++                float bh = Math.max(8 * density, (float) (h * values[i] / max));
++                float x = slot * i + (slot - bw) / 2;
++                rect.set(x, h - bh, x + bw, h);
++                paint.setColor(i == values.length - 1 ? accent : 0x73FFFFFF);
++                canvas.drawRoundRect(rect, r, r, paint);
++            }
++        }
++    }
++
++    private void open(String pkg) {
++        if (TextUtils.isEmpty(pkg)) return;
++        PackageManager pm = ctx.getPackageManager();
++        android.content.Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
++        if (i == null) i = pm.getLaunchIntentForPackage(pkg);
++        if (i == null) return;
++        i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
++        try {
++            ctx.startActivity(i);
++        } catch (Exception ignored) {
++        }
++    }
++
++    private TextView text(String s, int sp, int color, Typeface tf) {
++        TextView v = new TextView(ctx);
++        v.setText(s);
++        v.setTextSize(sp);
++        v.setTextColor(color);
++        v.setTypeface(tf);
++        return v;
++    }
++
++    private int dp(int v) {
++        return Math.round(v * density);
++    }
++}

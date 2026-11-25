@@ -1,0 +1,14 @@
+{
+  "background_color": "#090C14",
+  "wallpaper": true,
+  "wallpaper_true_color": true,
+  "dock_glass": true,
+  "dock_opacity": 55,
+  "ambient_glow": false,
+  "app_glow": false,
+  "focus_overshoot": false,
+  "advanced_effects": true,
+  "header_white": true,
+  "dock_title": false,
+  "utility_card": true
+}

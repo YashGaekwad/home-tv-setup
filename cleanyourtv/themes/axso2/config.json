@@ -1,0 +1,13 @@
+{
+  "wallpaper": true,
+  "wallpaper_true_color": true,
+  "wallpaper_dim": 0,
+  "ambient_glow": false,
+  "app_glow": false,
+  "dock_glass": true,
+  "dock_opacity": 55,
+  "advanced_effects": true,
+  "header_white": true,
+  "dock_title": false,
+  "power_on_home": true
+}

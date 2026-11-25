@@ -1,0 +1,36 @@
+# Xiaomi MiTV4I (magnolia), Android TV 9, firmware 3698. Based on examples/xiaomi-mitv4i-magnolia.
+# Owner's choice: a bare TV for the Airtel box on HDMI 3 - no apps, no voice, no cast, no updates.
+# Kept on purpose: partnercustomizer (Input button, remote pairing), stock launcher, Play Store/Services.
+# Batch 1: telemetry, PatchWall, promos
+com.miui.tv.analytics
+com.xiaomi.statistic
+com.google.android.feedback
+com.google.android.tv.bugreportsender
+com.mitv.tvhome.atv
+com.xm.webcontent
+co.sensara.tv.mitv
+co.sensara.tv.mitv.res
+com.google.android.tvrecommendations
+com.google.android.leanbacklauncher.recommendations
+# Batch 2: Xiaomi services, preloaded media
+com.xiaomi.mitv.tvmanager
+com.mitv.tvlock
+com.xiaomo.tv.milegal
+com.xiaomi.mimusic2
+com.google.android.play.games
+com.google.android.videos
+com.mitv.gallery
+com.mitv.videoplayer
+com.xiaomi.mitv.mediaexplorer
+org.chromium.webview_shell
+# Batch 3: owner's choices
+com.google.android.youtube.tv
+com.amazon.amazonvideo.livingroom
+com.google.android.youtube.tvmusic
+com.google.android.katniss
+com.google.android.speech.pumpkin
+com.google.android.apps.mediashell
+com.mitv.milinkservice
+com.xiaomi.mitv.updateservice
+com.google.android.backdrop
+com.google.android.marvin.talkback

@@ -1,0 +1,45 @@
+diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
+index 809a2f18..d2a61bf9 100644
+--- a/launcher/app/src/main/res/values/config.xml
++++ b/launcher/app/src/main/res/values/config.xml
+@@ -21,6 +21,8 @@
+         <item>com.amazon.amazonvideo.livingroom</item>
+         <item>com.google.android.youtube.tv</item>
+         <item>in.startv.hotstar</item>
++        <item>com.sonyliv</item>
++        <item>com.graymatrix.did</item>
+     </string-array>
+     <!-- With fewer dock_apps than columns (or a dock app that is not installed), the free dock slots take
+          the first grid apps, so the dock never shows a gap. false leaves them empty (#162); a theme can
+@@ -29,12 +31,12 @@
+ 
+     <!-- Apps never shown as tiles (e.g. the Live TV app, which the Inputs menu already covers). -->
+     <string-array name="hidden_apps">
+-        <item>com.mediatek.wwtv.tvcenter</item>
++        <item>com.android.tv</item>
+         <item>com.mitv.gallery</item>
+     </string-array>
+ 
+     <!-- The TV's Live TV / tuner app, offered at the end of the Inputs menu. Leave empty to omit. -->
+-    <string name="live_tv_package" translatable="false">com.mediatek.wwtv.tvcenter</string>
++    <string name="live_tv_package" translatable="false">com.android.tv</string>
+ 
+     <!-- Open the Live TV app above the first time Home comes up after the TV is switched on, for sets that are
+          mostly used for broadcast TV. Once per boot: Home after that stays Home. Can also be set with
+@@ -404,10 +406,15 @@
+     <!-- The focused dock app's name in large type above the dock. false keeps only the glow, which leaves room
+          for bigger tiles when rows_below_dock is 2 or 3. -->
+     <bool name="dock_title">true</bool>
++    <!-- Home utilities card above the dock: one glass tile per app on the TV that publishes usage rows (an
++         electricity meter today, more home devices later) through a provider with meta-data
++         com.gathin.tvhome.UTILITY_ROWS. The launcher only reads those rows; it has no network. Off by default;
++         a theme can set "utility_card": true. -->
++    <bool name="utility_card">false</bool>
+ 
+     <!-- Tiles per row in the grid; the dock always has this many slots. Tiles are 180dp wide at 4 columns and
+          shrink to fit from 5 up (about 144dp at 5, 117dp at 6 on a 1080p TV). -->
+-    <integer name="columns">4</integer>
++    <integer name="columns">6</integer>
+ 
+     <!-- Basic motion is on; advanced effects are opt-in in the launcher's own Settings screen. -->
+     <bool name="animations">true</bool>

@@ -1,0 +1,11 @@
+{
+  "boot_to_live_tv": true,
+  "live_tv_package": "com.android.tv",
+  "dock_apps": ["com.android.tv"],
+  "hidden_apps": [],
+  "app_labels": ["com.android.tv=Airtel Xstream"],
+  "app_banners": ["com.android.tv=banner_tv"],
+  "columns": 4,
+  "fill_dock": false,
+  "rows_below_dock": 0
+}
