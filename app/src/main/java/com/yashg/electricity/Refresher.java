@@ -4,7 +4,10 @@ import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
 import android.content.ComponentName;
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
+import android.webkit.CookieManager;
 import android.webkit.WebView;
 
 import org.json.JSONObject;
@@ -25,7 +28,10 @@ final class Refresher implements Scraper.Listener {
     private WebView web;
     private Scraper scraper;
     private final List<Scraper.Listener> listeners = new ArrayList<>();
+    private final Handler main = new Handler(Looper.getMainLooper());
     private String lastStatus = "";
+    /** Between refreshes the page and its web engine (about 150 MB) are let go; the sign-in cookie stays. */
+    private final Runnable release = this::release;
 
     private Refresher(Context c) {
         app = c.getApplicationContext();
@@ -59,8 +65,28 @@ final class Refresher implements Scraper.Listener {
         return web;
     }
 
+    /** The page if it exists, without creating one. */
+    WebView peekWebView() {
+        return web;
+    }
+
     boolean busy() {
         return scraper != null && scraper.busy();
+    }
+
+    private void release() {
+        if (web == null || busy() || web.getParent() != null) return;   // in use, or on screen (Menu)
+        CookieManager.getInstance().flush();
+        web.stopLoading();
+        web.loadUrl("about:blank");
+        web.destroy();
+        web = null;
+        scraper = null;
+    }
+
+    void releaseSoon() {
+        main.removeCallbacks(release);
+        main.postDelayed(release, 3000);
     }
 
     String lastStatus() {
@@ -77,6 +103,7 @@ final class Refresher implements Scraper.Listener {
 
     /** Returns false when nothing could be started (no login saved). */
     boolean refresh() {
+        main.removeCallbacks(release);
         webView();
         if (scraper.busy()) return true;
         String[] login = Creds.load(app);
@@ -104,11 +131,13 @@ final class Refresher implements Scraper.Listener {
             lastStatus = "Could not save: " + e.getMessage();
         }
         for (Scraper.Listener l : new ArrayList<>(listeners)) l.onResult(dash, usage);
+        releaseSoon();
     }
 
     @Override
     public void onError(String text) {
         lastStatus = text;
         for (Scraper.Listener l : new ArrayList<>(listeners)) l.onError(text);
+        releaseSoon();
     }
 }

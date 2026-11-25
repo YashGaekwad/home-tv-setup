@@ -92,8 +92,11 @@ public class MainActivity extends Activity implements Scraper.Listener {
     }
 
     private void hideSite() {
-        WebView w = Refresher.get(this).webView();
-        if (w.getParent() == root) root.removeView(w);
+        WebView w = Refresher.get(this).peekWebView();
+        if (w != null && w.getParent() == root) {
+            root.removeView(w);
+            Refresher.get(this).releaseSoon();
+        }
         board.setVisibility(View.VISIBLE);
     }
 
