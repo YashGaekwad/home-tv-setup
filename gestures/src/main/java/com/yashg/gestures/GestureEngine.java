@@ -85,6 +85,7 @@ final class GestureEngine {
     private boolean awake;
     private long awakeUntil, lastEventTime;
     private int wakeCount;
+    private double wakeSum;
     private double prevTilt = Double.NaN;
     private long frames, lastFpsTime;
     private double fps, inferMs;
@@ -279,20 +280,27 @@ final class GestureEngine {
         }
         if (motion != Gestures.G.NONE) event = motion;
 
-        // Wake: an upright, steady open palm.
+        // Wake: a raised open palm (roughly upright, within 45 deg) held steady. Its tilt becomes the user's own
+        // upright, which scrolling then measures from.
         double tilt = swipes.lastFlickX;
-        boolean upright = lm != null && palm && Math.abs(tilt) < 12
+        boolean upright = lm != null && palm && Math.abs(tilt) < 45
                 && !Double.isNaN(prevTilt) && Math.abs(tilt - prevTilt) < 6;
         prevTilt = lm != null && palm ? tilt : Double.NaN;
         if (!alwaysAwake) {
-            if (upright) wakeCount++;
-            else wakeCount = 0;
+            if (upright) {
+                wakeCount++;
+                wakeSum += tilt;
+            } else {
+                wakeCount = 0;
+                wakeSum = 0;
+            }
             if (!awake && wakeCount >= WAKE_FRAMES) {
+                swipes.setNeutral(wakeSum / wakeCount);
                 setAwake(true);
                 awakeUntil = now + IDLE_MS;
                 event = Gestures.G.NONE;
             }
-            if (awake && (event != Gestures.G.NONE || upright)) awakeUntil = now + IDLE_MS;
+            if (awake && (event != Gestures.G.NONE || (lm != null && palm))) awakeUntil = now + IDLE_MS;
             if (awake && now > awakeUntil) setAwake(false);
         }
         if (event != Gestures.G.NONE && (alwaysAwake || awake)) {
@@ -321,6 +329,7 @@ final class GestureEngine {
     private void setAwake(boolean a) {
         awake = a;
         wakeCount = 0;
+        wakeSum = 0;
         listener.onAwake(a);
     }
 

@@ -38,6 +38,8 @@ import android.widget.TextView;
 public class GestureControl extends AccessibilityService implements GestureEngine.Listener {
     static final String PREFS = "gestures", KEY_ON = "on";
     static final String ACTION_PAUSE = "com.yashg.gestures.PAUSE", ACTION_RESUME = "com.yashg.gestures.RESUME";
+    /** Shell-only test: adb shell am broadcast -a com.yashg.gestures.TEST --es g SWIPE_RIGHT */
+    static final String ACTION_TEST = "com.yashg.gestures.TEST";
 
     private GestureEngine engine;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -53,6 +55,13 @@ public class GestureControl extends AccessibilityService implements GestureEngin
         @Override
         public void onReceive(Context c, Intent i) {
             String a = i.getAction();
+            if (ACTION_TEST.equals(a)) {
+                try {
+                    onGesture(Gestures.G.valueOf(i.getStringExtra("g")));
+                } catch (Exception ignored) {
+                }
+                return;
+            }
             if (ACTION_PAUSE.equals(a)) pausedForTest = true;
             else if (ACTION_RESUME.equals(a)) pausedForTest = false;
             update();
@@ -69,6 +78,8 @@ public class GestureControl extends AccessibilityService implements GestureEngin
         f.addAction(ACTION_PAUSE);
         f.addAction(ACTION_RESUME);
         registerReceiver(receiver, f);
+        // The test trigger only from the adb shell (it holds DUMP; apps cannot).
+        registerReceiver(receiver, new IntentFilter(ACTION_TEST), "android.permission.DUMP", null);
         addBadge();
         update();
     }
@@ -112,6 +123,7 @@ public class GestureControl extends AccessibilityService implements GestureEngin
 
     @Override
     public void onGesture(Gestures.G g) {
+        android.util.Log.d("GestCtl", "gesture " + g);
         main.post(() -> {
             act(g);
             if (label != null) {
@@ -158,10 +170,26 @@ public class GestureControl extends AccessibilityService implements GestureEngin
     }
 
     /** Move input focus to the next item in that direction on the current screen. */
+    /** The window that has input focus (the app on screen), or the active one. */
+    private AccessibilityNodeInfo root() {
+        AccessibilityNodeInfo r = getRootInActiveWindow();
+        if (r != null) return r;
+        try {
+            for (android.view.accessibility.AccessibilityWindowInfo w : getWindows()) {
+                if (w.getType() == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+                        && (w.isFocused() || w.isActive()) && w.getRoot() != null) return w.getRoot();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
     private void move(int direction) {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = root();
+        android.util.Log.d("GestCtl", "move dir=" + direction + " root=" + (root == null ? "null" : root.getPackageName()));
         if (root == null) return;
         AccessibilityNodeInfo focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        android.util.Log.d("GestCtl", "focused=" + describe(focused));
         if (focused == null) {
             // Nothing focused yet: focus the first focusable item.
             AccessibilityNodeInfo first = firstFocusable(root, 0);
@@ -169,7 +197,11 @@ public class GestureControl extends AccessibilityService implements GestureEngin
             return;
         }
         AccessibilityNodeInfo next = focused.focusSearch(direction);
-        if (next != null) next.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+        android.util.Log.d("GestCtl", "next=" + describe(next));
+        if (next != null) {
+            boolean ok = next.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+            android.util.Log.d("GestCtl", "focus action ok=" + ok);
+        }
         else if (direction == View.FOCUS_DOWN || direction == View.FOCUS_UP) {
             // A list at its last visible item: let it scroll.
             focused.performAction(direction == View.FOCUS_DOWN
@@ -177,8 +209,16 @@ public class GestureControl extends AccessibilityService implements GestureEngin
         }
     }
 
+    private static String describe(AccessibilityNodeInfo n) {
+        if (n == null) return "null";
+        android.graphics.Rect r = new android.graphics.Rect();
+        n.getBoundsInScreen(r);
+        return n.getClassName() + " '" + n.getContentDescription() + "|" + n.getText() + "' " + r.toShortString()
+                + " focusable=" + n.isFocusable() + " focused=" + n.isFocused();
+    }
+
     private void click() {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = root();
         if (root == null) return;
         AccessibilityNodeInfo focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
         for (AccessibilityNodeInfo n = focused; n != null; n = n.getParent()) {

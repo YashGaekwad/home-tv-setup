@@ -25,6 +25,13 @@ final class Swipes {
     static final int HOLD_FRAMES = 10;              // ~2 s of steady upright palm = play/pause
 
     private final ArrayDeque<Double> recent = new ArrayDeque<>();   // last tilts, for a median
+    /** The user's own upright: a relaxed raised palm sat at about +21 deg in the sofa log, not 0. Set on wake. */
+    private double neutral;
+
+    void setNeutral(double deg) {
+        neutral = deg;
+        side = 0;
+    }
     private int side;                               // -1 tilted to the user's right, +1 to the left, 0 upright
     private long sideSince, lastStep, lastSeen;
     private double pTilt, px, py, width = -1;
@@ -58,14 +65,15 @@ final class Swipes {
         double raw = Math.toDegrees(Math.atan2(kx - wr.x(), wr.y() - ky));   // 0 = up, + = image right (user's left)
         recent.addLast(raw);
         while (recent.size() > 3) recent.removeFirst();
-        double tilt = median();
+        double absolute = median();
+        double tilt = absolute - neutral;
         double cx = (wr.x() + lm.get(5).x() + lm.get(9).x() + lm.get(13).x() + lm.get(17).x()) / 5;
         double cy = (wr.y() + lm.get(5).y() + lm.get(9).y() + lm.get(13).y() + lm.get(17).y()) / 5;
-        lastFlickX = tilt;
+        lastFlickX = absolute;
 
         // Which side is the palm on, with a gap between on and off so it does not flicker.
         int now_side = side;
-        if (Math.abs(tilt) > TILT_MAX) now_side = 0;   // hand down or sideways: rest
+        if (Math.abs(absolute) > TILT_MAX) now_side = 0;   // hand down or sideways: rest
         else if (tilt > TILT_ON) now_side = 1;
         else if (tilt < -TILT_ON) now_side = -1;
         else if (Math.abs(tilt) < TILT_OFF) now_side = 0;
