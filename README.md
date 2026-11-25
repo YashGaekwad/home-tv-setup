@@ -107,4 +107,19 @@ so a hand ~3 m away is big enough for the model. Flicks were dropped: at ~5 fram
 frames and its direction can't be told from the pull before it; the held tilt reads cleanly. Last run: right 9/9,
 left 7/7, up 29 frames, down 37 frames, no scrolls with the hand resting.
 
-Build: `./gradlew :gestures:assembleRelease`, install, then `adb shell pm grant com.yashg.gestures android.permission.CAMERA`.
+**Background control** (`GestureControl`, an accessibility service): runs the same engine while the TV screen is on,
+shows a small dot top-right (grey = watching for the wake palm, green = awake) and acts: tilt / thumbs / OK move and
+press the focused item through the screen's accessibility information (apps that draw their own screen may not
+respond), victory / "I love you" are Back / Home, the fist sends play/pause as a media key. **Wake first**: hold an
+upright open palm still for about a second; it sleeps again after 10 s without a gesture, so other people's hands do
+nothing. The Gestures tile has an on/off switch and the guided test; the camera stops with the screen off.
+
+Build: `./gradlew :gestures:assembleRelease`, install, then once:
+
+```bash
+adb shell pm grant com.yashg.gestures android.permission.CAMERA
+adb shell settings put secure enabled_accessibility_services com.yashg.gestures/com.yashg.gestures.GestureControl
+adb shell settings put secure accessibility_enabled 1
+```
+
+(Append with `:` if other accessibility services are already listed.)

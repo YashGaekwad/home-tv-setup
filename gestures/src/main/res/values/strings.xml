@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gesture_control_description">Controls the TV with hand gestures seen by the USB camera: move between items, select, back, home and play/pause. Camera frames are processed on the TV only and never saved or sent.</string>
+</resources>

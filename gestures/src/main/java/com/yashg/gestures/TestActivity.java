@@ -174,11 +174,13 @@ public class TestActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // The background control lets go of the camera while the test runs.
+        sendBroadcast(new android.content.Intent(GestureControl.ACTION_PAUSE).setPackage(getPackageName()));
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[] {Manifest.permission.CAMERA}, 1);
             return;
         }
-        start();
+        ui.postDelayed(this::start, 900);
     }
 
     @Override
@@ -190,7 +192,9 @@ public class TestActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        ui.removeCallbacksAndMessages(null);
         stop();
+        sendBroadcast(new android.content.Intent(GestureControl.ACTION_RESUME).setPackage(getPackageName()));
     }
 
     private void start() {
