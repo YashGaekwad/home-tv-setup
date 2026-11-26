@@ -58,7 +58,7 @@ final class GestureEngine {
     private static final int CAM_W = 1280, CAM_H = 720, CROP_W = 640, CROP_H = 480;
     private static final int[] SEARCH_X = {(CAM_W - CROP_W) / 2, 0, CAM_W - CROP_W};
     static final long IDLE_MS = 10_000, REPEAT_MS = 700;
-    static final int WAKE_FRAMES = 5;               // ~1 s of upright, steady open palm
+    static final int WAKE_FRAMES = 2;               // 2 of the last 3 frames, ~1.5 s of raised, steady open palm (2 hands run at ~2 fps)
 
     private final Context ctx;
     private final Listener listener;
@@ -77,14 +77,19 @@ final class GestureEngine {
     private boolean tracking;
     private int cropX, cropY, searchIdx;
     private long lastHandTime;
+    private double lastX = 0.5, lastY = 0.5;
 
-    private final Swipes swipes = new Swipes();
-    private Gestures.G last = Gestures.G.NONE, stable = Gestures.G.NONE;
-    private int streak;
+    private final Swipes swipes = new Swipes();   // only for the hand's tilt now (wake steadiness)
+    private final PalmMove move = new PalmMove();
+    private Gestures.G stable = Gestures.G.NONE;
+    private final Gestures.G[] recentG = new Gestures.G[3];
+    private int recentIdx;
     private long stableSince, lastRepeat;
     private boolean awake;
     private long awakeUntil, lastEventTime;
-    private int wakeCount;
+    private int wakeCount, wakeIdx;
+    private final boolean[] wakeHits = new boolean[3];
+    private final double[] wakeTilts = new double[3];
     private double wakeSum;
     private double prevTilt = Double.NaN;
     private long frames, lastFpsTime;
@@ -116,7 +121,7 @@ final class GestureEngine {
                         .setBaseOptions(BaseOptions.builder().setModelAssetPath("gesture_recognizer.task")
                                 .setDelegate(Delegate.CPU).build())
                         .setRunningMode(RunningMode.VIDEO)
-                        .setNumHands(1)
+                        .setNumHands(2)
                         .setMinHandDetectionConfidence(0.5f)
                         .setMinHandPresenceConfidence(0.5f)
                         .setMinTrackingConfidence(0.5f)
@@ -257,45 +262,71 @@ final class GestureEngine {
     }
 
     private void process(GestureRecognizerResult res, Bitmap bmp, int x0, int y0, long now, long dt) {
-        List<NormalizedLandmark> lm = res.landmarks().isEmpty() ? null : res.landmarks().get(0);
+        // Which hand to follow. Asleep: only an open, raised palm (the wake hand) - a fist of someone eating or a hand
+        // on a lap must not capture the camera window, as it did in the live log. Awake: the raised hand nearest to
+        // the one being followed, so it stays with the person who woke it.
+        int hi;
+        if (alwaysAwake) hi = Gestures.raisedHand(res);
+        else if (!awake) hi = Gestures.pointerHand(res);
+        else {
+            hi = Gestures.nearestRaised(res, lastX, lastY, 0.25);
+            if (hi < 0 && now - lastHandTime > 2500) hi = Gestures.pointerHand(res);   // lost them: look for a palm again
+        }
+        if (hi >= 0) {
+            lastX = res.landmarks().get(hi).get(9).x();
+            lastY = res.landmarks().get(hi).get(9).y();
+        }
+        List<NormalizedLandmark> lm = hi < 0 ? null : res.landmarks().get(hi);
         reframe(lm, x0, y0, now);
-        boolean palm = Gestures.isPalm(res);
-        Gestures.G g = Gestures.classify(res);
-        Gestures.G motion = swipes.update(now, lm, palm);
+        boolean palm = Gestures.isPointer(res, hi);   // "palm" = the pointing hand now
+        // Kept simple on purpose (user: "the direction my palm moves, it moves that way"): an open palm moves the
+        // focus, closing it into a fist selects, victory is back. Nothing else acts.
+        Gestures.G g = Gestures.simple(res, hi);
+        swipes.update(now, lm, palm);
+        if (alwaysAwake && lm != null && palm && !move.anchored()) move.anchor(lm, x0, y0, CROP_W, CROP_H);
+        Gestures.G motion = alwaysAwake || awake ? move.update(now, lm, palm, x0, y0, CROP_W, CROP_H) : Gestures.G.NONE;
 
-        // A static gesture counts once it holds for 3 frames; up/down repeat while held, the rest fire once.
-        streak = g == last ? streak + 1 : 1;
-        last = g;
+        // A static gesture counts when it is in 2 of the last 3 frames: at ~2 fps with two hands tracked, a held thumb
+        // read "up, none, up, up, none" in the live log and never made 3 in a row. Up/down repeat while held, the rest
+        // fire once.
+        recentG[recentIdx++ % 3] = g;
+        Gestures.G cand = Gestures.G.NONE;
+        for (Gestures.G x : recentG) {
+            if (x == null || x == Gestures.G.NONE) continue;
+            int n = 0;
+            for (Gestures.G y : recentG) if (y == x) n++;
+            if (n >= 2) cand = x;
+        }
         Gestures.G event = Gestures.G.NONE;
-        if (streak == 3 && g != stable) {
-            stable = g;
+        if (cand != stable) {
+            stable = cand;
             stableSince = now;
             lastRepeat = now;
-            if (g != Gestures.G.NONE) event = g;
-        } else if (streak >= 3 && (g == Gestures.G.UP || g == Gestures.G.DOWN) && now - lastRepeat >= REPEAT_MS) {
+            if (cand != Gestures.G.NONE) event = cand;
+        } else if ((cand == Gestures.G.VOL_UP || cand == Gestures.G.VOL_DOWN) && now - lastRepeat >= 500) {
             lastRepeat = now;
-            event = g;
-        } else if (g == Gestures.G.NONE && streak >= 3) {
-            stable = Gestures.G.NONE;
+            event = cand;
         }
         if (motion != Gestures.G.NONE) event = motion;
 
         // Wake: a raised open palm (roughly upright, within 45 deg) held steady. Its tilt becomes the user's own
         // upright, which scrolling then measures from.
         double tilt = swipes.lastFlickX;
-        boolean upright = lm != null && palm && Math.abs(tilt) < 45
-                && !Double.isNaN(prevTilt) && Math.abs(tilt - prevTilt) < 6;
-        prevTilt = lm != null && palm ? tilt : Double.NaN;
+        // At ~2 fps a frame or two is often misread, so: 2 of the last 3 frames, and steady within 15 deg.
+        boolean upright = lm != null && palm && Math.abs(tilt) < 70
+                && (Double.isNaN(prevTilt) || Math.abs(tilt - prevTilt) < 15);
+        if (lm != null && palm) prevTilt = tilt;
+        else if (lm == null) prevTilt = Double.NaN;
         if (!alwaysAwake) {
-            if (upright) {
-                wakeCount++;
-                wakeSum += tilt;
-            } else {
-                wakeCount = 0;
-                wakeSum = 0;
-            }
-            if (!awake && wakeCount >= WAKE_FRAMES) {
+            wakeHits[wakeIdx] = upright;
+            wakeTilts[wakeIdx] = tilt;
+            wakeIdx = (wakeIdx + 1) % 3;
+            wakeCount = 0;
+            wakeSum = 0;
+            for (int k = 0; k < 3; k++) if (wakeHits[k]) { wakeCount++; wakeSum += wakeTilts[k]; }
+            if (!awake && upright && wakeCount >= WAKE_FRAMES) {
                 swipes.setNeutral(wakeSum / wakeCount);
+                move.anchor(lm, x0, y0, CROP_W, CROP_H);
                 setAwake(true);
                 awakeUntil = now + IDLE_MS;
                 event = Gestures.G.NONE;
@@ -315,11 +346,12 @@ final class GestureEngine {
             frames = 0;
             lastFpsTime = now;
         }
-        String top = res.gestures().isEmpty() || res.gestures().get(0).isEmpty() ? "no hand"
-                : res.gestures().get(0).get(0).categoryName() + " " + Math.round(res.gestures().get(0).get(0).score() * 100) + "%";
+        String top = hi < 0 || res.gestures().size() <= hi || res.gestures().get(hi).isEmpty()
+                ? (res.landmarks().isEmpty() ? "no hand" : "hand not raised")
+                : res.gestures().get(hi).get(0).categoryName() + " " + Math.round(res.gestures().get(hi).get(0).score() * 100) + "%";
         log(lm == null ? "t=" + now + " step=" + step + " hand=no"
-                : String.format(Locale.US, "t=%d step=%s hand=yes palm=%b size=%.3f tilt=%+.0f cat=%s g=%s motion=%s awake=%b",
-                now, step, palm, swipes.lastHand, tilt, top.replace(' ', ':'), g, motion, awake));
+                : String.format(Locale.US, "t=%d step=%s hand=yes palm=%b size=%.3f tilt=%+.0f cat=%s g=%s motion=%s off=%+.1f,%+.1f awake=%b",
+                now, step, palm, swipes.lastHand, tilt, top.replace(' ', ':'), g, motion, move.offX, move.offY, awake));
         if (wantFrames) {
             listener.onFrame(bmp, lm, stable, event, fps, inferMs,
                     top + "  ·  " + (tracking ? "following hand" : "searching") + (alwaysAwake ? "" : awake ? "  ·  awake" : "  ·  asleep"));
@@ -330,6 +362,8 @@ final class GestureEngine {
         awake = a;
         wakeCount = 0;
         wakeSum = 0;
+        java.util.Arrays.fill(wakeHits, false);
+        if (!a) move.clear();
         listener.onAwake(a);
     }
 

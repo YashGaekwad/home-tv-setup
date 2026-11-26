@@ -84,7 +84,17 @@ from the cleanyourtv repo, MIT licence, © Gathin; `axso2` used a family photo t
 - Close network ADB on the TVs after any change (USB debugging off, revoke authorisations, reboot,
   `tools/adb-closed.py <tv ip>`): port 5555 is plaintext.
 
-## Gestures (test build)
+## Gestures (shelved experiment)
+
+> **Status: shelved (Nov 2026), not installed on any TV.** It worked in the guided test, but everyday use from the
+> sofa was not good enough. The TV runs only ~2–4 recognitions a second (with two hands tracked), a hand 3 m away is
+> tiny in the picture, and holding up an arm or wrist for long gets tiring. On Android 9 an app cannot send real remote keys
+> without network ADB (which stays open), so moving and OK in apps that draw their own screen (YouTube) were unreliable.
+> The code is kept for reference. Its last, untested state is a fingertip "joystick" (`PalmMove`: point and move the
+> fingertip, the selection follows), thumbs up / down for volume, a fist to select, victory for back and "I love you"
+> to mute. The table and notes below describe the earlier palm-tilt version.
+> If it is picked up again, the open-source [Legvan/tv-remote](https://github.com/Legvan/tv-remote) (MIT) shows how
+> to send real key presses through the TV's own ADB, using [AdbLib](https://github.com/cgutman/AdbLib).
 
 `gestures/` is a test app for controlling the TV with hand gestures through a USB webcam (the MiTV-AXSO1 exposes
 it as a standard camera). It uses Google's MediaPipe gesture recogniser (`gesture_recognizer.task`, Apache 2.0)

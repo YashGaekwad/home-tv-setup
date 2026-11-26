@@ -49,11 +49,10 @@ public class MainActivity extends Activity {
         col.addView(row);
 
         TextView how = text("How to use\n"
-                + "1.  Raise your open palm, upright and still, for a second: the dot top-right turns green.\n"
-                + "2.  Tilt the palm to your right / left and hold  =  move right / left (repeats).\n"
-                + "3.  👍 thumbs up  =  up        👎 thumbs down  =  down\n"
-                + "4.  👌 OK sign  =  select        ✊ fist next to your face  =  play / pause\n"
-                + "5.  ✌ victory  =  back        🤟  =  home\n"
+                + "1.  Point your index finger at the TV and hold it still for a second: the dot top-right turns green.\n"
+                + "2.  Keep pointing and move just the fingertip right / left / up / down: the selection follows, faster the further you move. Back to the start = stop. Rest your elbow.\n"
+                + "3.  Fold the finger into a fist  =  select.        ✌  =  back.\n"
+                + "4.  👍 hold  =  volume up        👎 hold  =  volume down        🤟  =  mute / unmute.\n"
                 + "After 10 seconds without a gesture it goes back to sleep (grey dot).\n\n"
                 + "The camera is used only on this TV: nothing is recorded, saved or sent. "
                 + "It stops when the TV screen is off or this switch is off.",

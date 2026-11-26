@@ -165,6 +165,9 @@ public class GestureControl extends AccessibilityService implements GestureEngin
             case BACK: performGlobalAction(GLOBAL_ACTION_BACK); break;
             case HOME: performGlobalAction(GLOBAL_ACTION_HOME); break;
             case PLAY_PAUSE: media(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE); break;
+            case VOL_UP: volume(AudioManager.ADJUST_RAISE); break;
+            case VOL_DOWN: volume(AudioManager.ADJUST_LOWER); break;
+            case MUTE: volume(AudioManager.ADJUST_TOGGLE_MUTE); break;
             default: break;
         }
     }
@@ -237,6 +240,11 @@ public class GestureControl extends AccessibilityService implements GestureEngin
             if (f != null) return f;
         }
         return null;
+    }
+
+    private void volume(int direction) {
+        getSystemService(AudioManager.class).adjustSuggestedStreamVolume(direction, AudioManager.USE_DEFAULT_STREAM_TYPE,
+                AudioManager.FLAG_SHOW_UI);
     }
 
     private void media(int keyCode) {
